@@ -1,6 +1,7 @@
 import json
 import os
 from typing import Any
+from typing import List
 
 import httpx
 from httpx import AsyncClient, Response
@@ -11,6 +12,8 @@ from .utils import utc
 
 ReqParams = dict[str, str | int] | None
 TMP_TS = utc.now().isoformat().split(".")[0].replace("T", "_").replace(":", "-")[0:16]
+ACCOUNT_REQ_COUNT_PREFIX = "account_req_count_"
+ACCOUNT_TOTAL_COUNT = "accounts_total_count"
 
 
 class Ctx:
@@ -66,12 +69,15 @@ def dump_rep(rep: Response):
 
 
 class QueueClient:
-    def __init__(self, pool: AccountsPool, queue: str, debug=False, proxy: str | None = None):
+    def __init__(self, pool: AccountsPool, queue: str, debug=False, proxy: str | None = None, redis_conn:str | None = None, change=15, ave=True):
         self.pool = pool
         self.queue = queue
         self.debug = debug
         self.ctx: Ctx | None = None
         self.proxy = proxy
+        self.redis_conn = redis_conn
+        self.change = change
+        self.ave = ave
 
     async def __aenter__(self):
         await self._get_ctx()
@@ -98,10 +104,102 @@ class QueueClient:
 
         await self.pool.unlock(ctx.acc.username, self.queue, ctx.req_count)
 
-    async def _get_ctx(self):
-        if self.ctx:
+    def _increment_total_count(self) -> int:
+        # 创建一个键名
+        key = ACCOUNT_TOTAL_COUNT
+        # 获取当前计数
+        current_usage = self.redis_conn.get(key)
+
+        if current_usage is None:
+            # 如果键不存在，初始化计数为1，设置过期时间为24小时
+            self.redis_conn.set(key, 1, ex=24*60*60)
+            current_usage = 1
+        else:
+            # 如果键存在，增加计数
+            current_usage = int(current_usage) + 1
+            self.redis_conn.incr(key)
+        return current_usage
+
+    def _get_total_count(self) -> int:
+        if not self.redis_conn:
+            return None
+        # 创建一个键名
+        key = ACCOUNT_TOTAL_COUNT
+        # 获取当前计数
+        current_usage = self.redis_conn.get(key)
+
+        if current_usage is None:
+            current_usage = None
+        return current_usage
+
+    def _increment_account_usage(self, account: str) -> int:
+        if not self.redis_conn:
+            return None
+        # 创建一个键名
+        key = f"{ACCOUNT_REQ_COUNT_PREFIX}{account}"
+
+        # 获取当前计数
+        current_usage = self.redis_conn.get(key)
+
+        if current_usage is None:
+            # 如果键不存在，初始化计数为1，设置过期时间为24小时
+            self.redis_conn.set(key, 1, ex=24*60*60)
+            current_usage = 1
+        else:
+            # 如果键存在，增加计数
+            current_usage = int(current_usage) + 1
+            self.redis_conn.incr(key)
+        logger.info(f"***************current token{account} request count:{current_usage}")
+
+        return current_usage
+
+    async def _get_least_used_account(self) -> str:
+        min_usage = float('inf')
+        least_used_account = None
+        accs = await self.pool.accounts_info()
+        accounts = []
+        for acc in accs:
+            if acc['active'] == True:
+                accounts.append(acc['username'])
+
+        for username in accounts:
+            key = f"{ACCOUNT_REQ_COUNT_PREFIX}{username}"
+            usage = self.redis_conn.get(key)
+
+            if usage is None:
+                return username # 如果有未使用过的token，直接返回
+
+            usage = int(usage)
+            if usage < min_usage:
+                min_usage = usage
+                least_used_account = username
+
+        return least_used_account
+
+    async def _change_acc_usage(self):
+
+        async def _change():
+            username = await self._get_least_used_account()
+            if username is None:
+                return None
+            acc = await self.pool.get_account(username)
+            if acc is None:
+                return None
+            clt = acc.make_client(proxy=self.proxy)
+            self.ctx = Ctx(acc, clt)
             return self.ctx
 
+        total_count = self._get_total_count()
+        if total_count and total_count%self.change == 0:
+            ctx = await _change()
+            return ctx
+        else:
+            if self.ctx:
+                return self.ctx
+            ctx = await _change
+            return ctx
+
+    async def _org_change(self):
         acc = await self.pool.get_for_queue_or_wait(self.queue)
         if acc is None:
             return None
@@ -109,6 +207,22 @@ class QueueClient:
         clt = acc.make_client(proxy=self.proxy)
         self.ctx = Ctx(acc, clt)
         return self.ctx
+
+    async def _get_ctx(self):
+        
+        if self.ave:
+            ctx = await self._change_acc_usage()
+            return ctx
+        else:
+            total_count = self._get_total_count()
+            if total_count and total_count%self.change == 0:
+                ctx = self._org_change()
+                return ctx
+            else:
+                if self.ctx:
+                    return self.ctx
+                ctx = self._org_change()
+                return ctx
 
     async def _check_rep(self, rep: Response) -> None:
         """
@@ -215,6 +329,8 @@ class QueueClient:
                 await self._check_rep(rep)
 
                 ctx.req_count += 1  # count only successful
+                self._increment_account_usage(ctx.acc.username)
+                self._increment_total_count()
                 unknown_retry, connection_retry = 0, 0
                 return rep
             except AbortReqError:
