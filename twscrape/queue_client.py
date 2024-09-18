@@ -196,7 +196,7 @@ class QueueClient:
         else:
             if self.ctx:
                 return self.ctx
-            ctx = await _change
+            ctx = await _change()
             return ctx
 
     async def _org_change(self):
