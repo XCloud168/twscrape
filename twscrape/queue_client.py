@@ -214,7 +214,7 @@ class QueueClient:
         return self.ctx
 
     async def _get_ctx(self):
-        logger.info("###start get ctx#####") 
+        logger.info(f"get_ctx self ctx:{self.ctx}") 
         if self.ave:
             ctx = await self._change_acc_usage()
             return ctx
@@ -222,12 +222,12 @@ class QueueClient:
             total_count = self._get_total_count()
             logger.info(f"*********total_count:{total_count}")
             if total_count and int(total_count)%int(self.change) == 0:
-                ctx = self._org_change()
+                ctx = await self._org_change()
                 return ctx
             else:
                 if self.ctx:
                     return self.ctx
-                ctx = self._org_change()
+                ctx = await self._org_change()
                 return ctx
 
     async def _check_rep(self, rep: Response) -> None:
