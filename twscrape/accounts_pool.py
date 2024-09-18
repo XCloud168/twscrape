@@ -34,7 +34,8 @@ def guess_delim(line: str):
 
 class AccountsPool:
     # _order_by: str = "RANDOM()"
-    _order_by: str = "username"
+    # _order_by: str = "username"
+    _order_by: str = "total_req"
 
     def __init__(
         self,
