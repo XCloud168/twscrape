@@ -174,35 +174,38 @@ class QueueClient:
                 min_usage = usage
                 least_used_account = username
 
+        logger.debug(f"latest useed account: {least_used_account}")
         return least_used_account
+
+    async def _change(self):
+        username = await self._get_least_used_account()
+        logger.debug(f"change account to {username}")
+        if username is None:
+            return None
+        acc = await self.pool.get_account(username)
+        if acc is None:
+            return None
+        clt = acc.make_client(proxy=self.proxy)
+        self.ctx = Ctx(acc, clt)
+        return self.ctx
 
     async def _change_acc_usage(self):
 
-        async def _change():
-            username = await self._get_least_used_account()
-            if username is None:
-                return None
-            acc = await self.pool.get_account(username)
-            if acc is None:
-                return None
-            clt = acc.make_client(proxy=self.proxy)
-            self.ctx = Ctx(acc, clt)
-            return self.ctx
-
         total_count = self._get_total_count()
-        logger.info(f'####curr total_count:{total_count}')
-        logger.info(f'####curr change:{self.change}')
+        logger.debug(f'####curr total_count:{total_count}')
+        logger.debug(f'####curr change:{self.change}')
         if total_count and int(total_count)%int(self.change) == 0:
-            ctx = await _change()
+            ctx = await self._change()
             return ctx
         else:
             if self.ctx:
                 return self.ctx
-            ctx = await _change()
+            ctx = await self._change()
             return ctx
 
     async def _org_change(self):
         acc = await self.pool.get_for_queue_or_wait(self.queue)
+        logger.debug(f'org change acc:{acc}')
         if acc is None:
             return None
 
@@ -217,7 +220,7 @@ class QueueClient:
             return ctx
         else:
             total_count = self._get_total_count()
-            logger.info(f'total_count:{total_count}')
+            logger.debug(f'total_count:{total_count}')
             if total_count and int(total_count)%int(self.change) == 0:
                 ctx = self._org_change()
                 return ctx
