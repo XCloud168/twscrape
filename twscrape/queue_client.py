@@ -214,8 +214,7 @@ class QueueClient:
         return self.ctx
 
     async def _get_ctx(self):
-        
-        logger.info(f"*********get ctx username:{self.ctx.acc.username}")
+        logger.info("###start get ctx#####") 
         if self.ave:
             ctx = await self._change_acc_usage()
             return ctx
