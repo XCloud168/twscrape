@@ -69,7 +69,7 @@ def dump_rep(rep: Response):
 
 
 class QueueClient:
-    def __init__(self, pool: AccountsPool, queue: str, debug=False, proxy: str | None = None, redis_conn:str | None = None, change=15, ave=True):
+    def __init__(self, pool: AccountsPool, queue: str, debug=False, proxy: str | None = None, redis_conn:str | None = None, change:str=15, ave:bool=True):
         self.pool = pool
         self.queue = queue
         self.debug = debug
@@ -190,7 +190,9 @@ class QueueClient:
             return self.ctx
 
         total_count = self._get_total_count()
-        if total_count and total_count%self.change == 0:
+        logger.info(f'####curr total_count:{total_count}')
+        logger.info(f'####curr change:{self.change}')
+        if total_count and int(total_count)%int(self.change) == 0:
             ctx = await _change()
             return ctx
         else:
@@ -215,7 +217,8 @@ class QueueClient:
             return ctx
         else:
             total_count = self._get_total_count()
-            if total_count and total_count%self.change == 0:
+            logger.info(f'total_count:{total_count}')
+            if total_count and int(total_count)%int(self.change) == 0:
                 ctx = self._org_change()
                 return ctx
             else:
