@@ -69,7 +69,7 @@ def dump_rep(rep: Response):
 
 
 class QueueClient:
-    def __init__(self, pool: AccountsPool, queue: str, debug=False, proxy: str | None = None, redis_conn:str | None = None, change:str=15, ave:bool=True):
+    def __init__(self, pool: AccountsPool, queue: str, debug=False, proxy: str | None = None, redis_conn:str | None = None, change=15, ave=True):
         self.pool = pool
         self.queue = queue
         self.debug = debug
@@ -179,7 +179,7 @@ class QueueClient:
 
     async def _change(self):
         username = await self._get_least_used_account()
-        logger.debug(f"change account to {username}")
+        logger.info(f"********change account to {username}")
         if username is None:
             return None
         acc = await self.pool.get_account(username)
@@ -192,8 +192,8 @@ class QueueClient:
     async def _change_acc_usage(self):
 
         total_count = self._get_total_count()
-        logger.debug(f'####curr total_count:{total_count}')
-        logger.debug(f'####curr change:{self.change}')
+        logger.info(f"**********curr total_count:{total_count}")
+        logger.info(f"***********curr change:{self.change}")
         if total_count and int(total_count)%int(self.change) == 0:
             ctx = await self._change()
             return ctx
@@ -215,12 +215,13 @@ class QueueClient:
 
     async def _get_ctx(self):
         
+        logger.info(f"*********get ctx username:{self.ctx.acc.username}")
         if self.ave:
             ctx = await self._change_acc_usage()
             return ctx
         else:
             total_count = self._get_total_count()
-            logger.debug(f'total_count:{total_count}')
+            logger.info(f"*********total_count:{total_count}")
             if total_count and int(total_count)%int(self.change) == 0:
                 ctx = self._org_change()
                 return ctx
@@ -324,6 +325,7 @@ class QueueClient:
     async def req(self, method: str, url: str, params: ReqParams = None) -> Response | None:
         unknown_retry, connection_retry = 0, 0
 
+        logger.info(f"####start request")
         while True:
             ctx = await self._get_ctx()  # not need to close client, class implements __aexit__
             if ctx is None:
