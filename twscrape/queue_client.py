@@ -105,6 +105,9 @@ class QueueClient:
         await self.pool.unlock(ctx.acc.username, self.queue, ctx.req_count)
 
     def _increment_total_count(self) -> int:
+
+        if not self.redis_conn:
+            return None
         # 创建一个键名
         key = ACCOUNT_TOTAL_COUNT
         # 获取当前计数
@@ -154,6 +157,8 @@ class QueueClient:
         return current_usage
 
     async def _get_least_used_account(self) -> str:
+        if not self.redis_conn:
+            return None
         min_usage = float('inf')
         least_used_account = None
         accs = await self.pool.accounts_info()
@@ -215,7 +220,7 @@ class QueueClient:
 
     async def _get_ctx(self):
         logger.info(f"get_ctx self ctx:{self.ctx}") 
-        if self.ave:
+        if self.ave and self.redis_conn:
             ctx = await self._change_acc_usage()
             return ctx
         else:
